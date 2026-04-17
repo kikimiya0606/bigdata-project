@@ -1,0 +1,91 @@
+import streamlit as st
+import ollama
+
+# ── 페이지 설정 ──
+st.set_page_config(page_title="AI 챗봇", page_icon="🤖", layout="wide")
+
+# ── 사이드바: 설정 ──
+with st.sidebar:
+    st.header("⚙ 챗봇 설정")
+
+    # 시스템 프롬프트 선택 (개선된 버전)
+    system_prompts = {
+        "일반 대화": "당신은 친절하고 도움이 되는 AI 어시스턴트입니다. 한국어로 답변해 주세요.",
+        "파이썬 튜터": "당신은 친절한 파이썬 프로그래밍 튜터입니다. 대학생 눈높이에 맞춰 쉽게 설명하고, 코드 예시를 포함해주세요.",
+        "데이터 분석가": "당신은 데이터 분석 전문가입니다. Pandas, 시각화, 통계 분석에 대해 전문적으로 답변해주세요.",
+        "영어 선생님": "당신은 영어 회화 선생님입니다. 사용자가 한국어로 질문하면 영어로 답변하고, 한국어 해설을 아래에 추가해주세요.",
+        "연하 남친": "당신은 다정한 연하의 남자친구입니다. 사용자에게 다정하고 섬세한 말투로 답변을 해 주세요."
+}
+
+    selected_role = st.selectbox("AI 역할 선택", list(system_prompts.keys()))
+
+    # 직접 입력 옵션
+    custom_prompt = st.text_area(
+        "또는 직접 입력:",
+        placeholder="AI에게 부여할 역할을 입력하세요...",
+        height=100
+    )
+
+    # Temperature 조절
+    temperature = st.slider("Temperature", 0.0, 1.5, 0.7, 0.1)
+
+    st.divider()
+
+    # 대화 초기화 버튼
+    if st.button("🗑 대화 초기화", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+
+    # 대화 통계
+    if "messages" in st.session_state:
+        user_msgs = sum(1 for m in st.session_state.messages if m["role"] == "user")
+        st.caption(f"💬 대화 수: {user_msgs}턴")
+
+# ── 시스템 프롬프트 결정 ──
+system_prompt = custom_prompt.strip() if custom_prompt.strip() else system_prompts[selected_role]
+
+# ── 메인 화면 ──
+st.title("🤖 AI 챗봇")
+st.caption(f"현재 역할: {selected_role} | Temperature: {temperature}")
+
+# ── 대화 기록 초기화 ──
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# ── 기존 대화 표시 ──
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
+
+# ── 사용자 입력 ──
+user_input = st.chat_input("메시지를 입력하세요")
+
+if user_input:
+    st.session_state.messages.append({"role": "user", "content": user_input})
+
+    with st.chat_message("user"):
+        st.write(user_input)
+
+    # Ollama 메시지 구성
+    ollama_messages = [
+        {"role": "system", "content": system_prompt}
+    ] + st.session_state.messages
+
+    with st.chat_message("assistant"):
+        stream = ollama.chat(
+            model="gemma3:4b",
+            messages=ollama_messages,
+            stream=True,
+            options={"temperature": temperature}
+        )
+
+        def stream_generator():
+            for chunk in stream:
+                yield chunk["message"]["content"]
+
+        full_response = st.write_stream(stream_generator())
+
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": full_response
+    })
